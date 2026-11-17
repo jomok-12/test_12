@@ -1,0 +1,3 @@
+database/*
+public/uploads/*/*
+!public/uploads/*/.gitkeep

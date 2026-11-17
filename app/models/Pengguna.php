@@ -1,0 +1,136 @@
+<?php
+
+require_once __DIR__ . '/../core/Database.php';
+
+/**
+ * Model untuk tabel pengguna.
+ */
+class Pengguna
+{
+    private $pdo;
+
+    public function __construct()
+    {
+        $this->pdo = Database::connect();
+    }
+
+    /** Cari satu user berdasarkan username. */
+    public function findByUsername(string $username)
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM pengguna WHERE username = :username LIMIT 1'
+        );
+        $stmt->execute(['username' => $username]);
+        $user = $stmt->fetch();
+        return $user ?: null;
+    }
+
+    /** Cari satu user berdasarkan id. */
+    public function findById(int $id)
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM pengguna WHERE id_pengguna = :id'
+        );
+        $stmt->execute(['id' => $id]);
+        $user = $stmt->fetch();
+        return $user ?: null;
+    }
+
+    public function statistik(int $id): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT
+                (SELECT COUNT(*) FROM postingan
+                    WHERE id_pengguna = :laporan
+                      AND status_tampil IS DISTINCT FROM 'dihapus') AS laporan,
+                (SELECT COUNT(*) FROM komentar
+                    WHERE id_pengguna = :komentar
+                      AND status_tampil IS DISTINCT FROM 'dihapus') AS komentar,
+                (SELECT COUNT(*) FROM claim
+                    WHERE id_pengguna = :klaim) AS klaim"
+        );
+
+        $stmt->execute([
+            'laporan'  => $id,
+            'komentar' => $id,
+            'klaim'    => $id,
+        ]);
+
+        $row = $stmt->fetch() ?: [];
+
+        return [
+            'laporan'  => (int) ($row['laporan'] ?? 0),
+            'komentar' => (int) ($row['komentar'] ?? 0),
+            'klaim'    => (int) ($row['klaim'] ?? 0),
+        ];
+    }
+
+    /**
+     * simpan user baru dan kembalikan ID jika berhasil
+     *
+     * @return int|null ID pengguna baru, atau null jika username sudah digunakan
+     */
+    public function create(array $data): ?int
+    {
+        $sql = 'INSERT INTO pengguna (nama, username, password, role, nomor_kontak)
+            VALUES (:nama, :username, :password, :role, :nomor_kontak)
+            ON CONFLICT (username) DO NOTHING
+            RETURNING id_pengguna';
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            'nama'         => $data['nama'],
+            'username'     => $data['username'],
+            'password'     => password_hash($data['password'], PASSWORD_DEFAULT),
+            'role'         => $data['role'] ?? 'user',
+            'nomor_kontak' => $data['nomor_kontak'],
+        ]);
+
+        $id = $stmt->fetchColumn();
+
+        return $id === false ? null : (int) $id;
+    }
+
+    /**
+     * Update data profil pengguna (nama, nomor_kontak, dan foto_profil).
+     *
+     * @param int   $idPengguna ID pengguna
+     * @param array $data       Array data ('nama', 'nomor_kontak', 'foto_profil')
+     * @return bool
+     */
+    public function updateProfil(int $idPengguna, array $data): bool
+    {
+        $nama        = trim($data['nama'] ?? '');
+        $nomorKontak = trim($data['nomor_kontak'] ?? ($data['no_hp'] ?? ''));
+        $fotoProfil  = $data['foto_profil'] ?? null;
+
+        if ($fotoProfil !== null) {
+            $sql = 'UPDATE pengguna 
+                    SET nama = :nama, 
+                        nomor_kontak = :nomor_kontak, 
+                        foto_profil = :foto_profil
+                    WHERE id_pengguna = :id';
+
+            $stmt = $this->pdo->prepare($sql);
+            return $stmt->execute([
+                'nama'         => $nama,
+                'nomor_kontak' => $nomorKontak,
+                'foto_profil'  => $fotoProfil,
+                'id'           => $idPengguna,
+            ]);
+        }
+
+        $sql = 'UPDATE pengguna 
+                SET nama = :nama, 
+                    nomor_kontak = :nomor_kontak
+                WHERE id_pengguna = :id';
+
+        $stmt = $this->pdo->prepare($sql);
+        return $stmt->execute([
+            'nama'         => $nama,
+            'nomor_kontak' => $nomorKontak,
+            'id'           => $idPengguna,
+        ]);
+    }
+}
+
